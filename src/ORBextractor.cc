@@ -78,7 +78,7 @@ namespace ORB_SLAM2
 
 const int PATCH_SIZE = 31;			///<使用灰度质心法计算特征点的方向信息时，图像块的大小,或者说是直径
 const int HALF_PATCH_SIZE = 15;		///<上面这个大小的一半，或者说是半径
-const int EDGE_THRESHOLD = 19;		///<算法生成的图像边
+const int EDGE_THRESHOLD = 19;		///<算法生成的图像边 为了进行高斯模糊而预留的边界区域
 //生成这个边的目的是进行图像金子塔的生成时，需要对图像进行高斯滤波处理，为了考虑到使滤波后的图像边界处的像素也能够携带有正确的图像信息，
 //这里作者就将原图像扩大了一个边。
 
@@ -203,6 +203,7 @@ static void computeOrbDescriptor(const KeyPoint& kpt, const Mat& img, const Poin
     #undef GET_VALUE
 }
 
+//BRIEF描述子 是 256个bit的bool值【bit】，需要256个xy点对
 //下面就是预先定义好的随机点集，256是指可以提取出256bit的描述子信息，每个bit由一对点比较得来；4=2*2，前面的2是需要两个点（一对点）进行比较，后面的2是一个点有两个坐标
 static int bit_pattern_31_[256*4] =
 {
@@ -474,11 +475,12 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
     nfeatures(_nfeatures), scaleFactor(_scaleFactor), nlevels(_nlevels),
     iniThFAST(_iniThFAST), minThFAST(_minThFAST)//设置这些参数
 {
-	//存储每层图像缩放系数的vector调整为符合图层数目的大小
+	//mvScaleFactor的类型为：std::vector<float>
+    //存储每层图像缩放系数的vector调整为符合图层数目的大小
     mvScaleFactor.resize(nlevels);  
 	//存储这个sigma^2，其实就是每层图像相对初始图像缩放因子的平方
     mvLevelSigma2.resize(nlevels);
-	//对于初始图像，这两个参数都是1
+	//对于初始图像【第0/底层】，这两个参数都是1
     mvScaleFactor[0]=1.0f;
     mvLevelSigma2[0]=1.0f;
 	//然后逐层计算图像金字塔中图像相当于初始图像的缩放系数 
@@ -499,15 +501,18 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
         mvInvLevelSigma2[i]=1.0f/mvLevelSigma2[i];
     }
 
-    //调整图像金字塔vector以使得其符合设定的图像层数
-    mvImagePyramid.resize(nlevels);
+    //调整存储图像金字塔vector以使得其符合设定的图像层数
+    mvImagePyramid.resize(nlevels);//std::vector<cv::Mat> mvImagePyramid;
 
 	//每层需要提取出来的特征点个数，这个向量也要根据图像金字塔设定的层数进行调整
-    mnFeaturesPerLevel.resize(nlevels);
+    mnFeaturesPerLevel.resize(nlevels);//std::vector<int> 
 	
 	//图片降采样缩放系数的倒数
     float factor = 1.0f / scaleFactor;
-	//第0层图像应该分配的特征点数量
+	//关于每一层分配的点数计算公式【等比分布】，详看小六课件一。
+    //理论上应该按面积平方倍变化【原本相邻层点数差1.2*1.2倍】，
+    //但是这里是按边长一次方倍变化的【原本相邻层点数只差1.2倍】。
+    //第0层图像应该分配的特征点数量  
     float nDesiredFeaturesPerScale = nfeatures*(1 - factor)/(1 - (float)pow((double)factor, (double)nlevels));
 
 	//用于在特征点个数分配的，特征点的累计计数清空
@@ -520,13 +525,14 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
 		//累计
         sumFeatures += mnFeaturesPerLevel[level];
 		//乘系数
-        nDesiredFeaturesPerScale *= factor;
+        nDesiredFeaturesPerScale *= factor;//但是这里是按边长一次方倍变化的【原本相邻层点数只差1.2倍】
     }
     //由于前面的特征点个数取整操作，可能会导致剩余一些特征点个数没有被分配，所以这里就将这个余出来的特征点分配到最高的图层中
+    //不一定正好等比把1000个特征点分配完，故最后剩下的都给最顶层了。
     mnFeaturesPerLevel[nlevels-1] = std::max(nfeatures - sumFeatures, 0);
 
 	//成员变量pattern的长度，也就是点的个数，这里的512表示512个点（上面的数组中是存储的坐标所以是256*2*2）
-    const int npoints = 512;
+    const int npoints = 512; //256个点对，描述子是256个bool值【bit】
 	//获取用于计算BRIEF描述子的随机采样点点集头指针
 	//注意到pattern0数据类型为Points*,bit_pattern_31_是int[]型，所以这里需要进行强制类型转换
     const Point* pattern0 = (const Point*)bit_pattern_31_;	
@@ -539,7 +545,7 @@ ORBextractor::ORBextractor(int _nfeatures,		//指定要提取的特征点数目
     // pre-compute the end of a row in a circular patch
 	//预先计算圆形patch中行的结束位置
 	//+1中的1表示那个圆的中间行
-    umax.resize(HALF_PATCH_SIZE + 1);
+    umax.resize(HALF_PATCH_SIZE + 1);//计算特征点的质心（圆形zhixin，半径为15）：用于求取点的旋转方向使用
 	
 	//cvFloor返回不大于参数的最大整数值，cvCeil返回不小于参数的最小整数值，cvRound则是四舍五入
     int v,		//循环辅助变量
@@ -1663,7 +1669,8 @@ void ORBextractor::ComputePyramid(cv::Mat image)
         float scale = mvInvScaleFactor[level];
 		//计算本层图像的像素尺寸大小
         Size sz(cvRound((float)image.cols*scale), cvRound((float)image.rows*scale));
-		//全尺寸图像。包括无效图像区域的大小。将图像进行“补边”，EDGE_THRESHOLD区域外的图像不进行FAST角点检测
+		//全尺寸图像。包括无效图像区域的大小。将图像进行“补边”
+        //EDGE_THRESHOLD/*19个像素，为了高斯模糊用*/区域外的图像不进行FAST角点检测
         Size wholeSize(sz.width + EDGE_THRESHOLD*2, sz.height + EDGE_THRESHOLD*2);
 		// 定义了两个变量：temp是扩展了边界的图像，masktemp并未使用
         Mat temp(wholeSize, image.type()), masktemp;

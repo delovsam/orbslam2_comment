@@ -122,7 +122,7 @@ Tracking::Tracking(
     }
     DistCoef.copyTo(mDistCoef);
 
-    // 双目摄像头baseline * fx 50
+    // 双目摄像头baseline * fx  好比 mbf = 0.12m * 435.2046
     mbf = fSettings["Camera.bf"];
 
     float fps = fSettings["Camera.fps"];
@@ -183,7 +183,7 @@ Tracking::Tracking(
     if(sensor==System::STEREO)
         mpORBextractorRight = new ORBextractor(nFeatures,fScaleFactor,nLevels,fIniThFAST,fMinThFAST);
 
-    // 在单目初始化的时候，会用mpIniORBextractor来作为特征点提取器
+    // 在单目初始化的时候，会用mpIniORBextractor来作为特征点提取器 两倍的特征点提取
     if(sensor==System::MONOCULAR)
         mpIniORBextractor = new ORBextractor(2*nFeatures,fScaleFactor,nLevels,fIniThFAST,fMinThFAST);
 
@@ -204,7 +204,7 @@ Tracking::Tracking(
 
     if(sensor==System::RGBD)
     {
-        // 深度相机disparity转化为depth时的因子
+        // 深度相机disparity转化为depth时的因子  韩：5000倍 代表16bit整数 保存深度值，采用的放大倍数
         mDepthMapFactor = fSettings["DepthMapFactor"];
         if(fabs(mDepthMapFactor)<1e-5)
             mDepthMapFactor=1;

@@ -300,8 +300,8 @@ cv::Mat System::TrackMonocular(const cv::Mat &im, const double &timestamp)
     // Check mode change
     {
         // 独占锁，主要是为了mbActivateLocalizationMode和mbDeactivateLocalizationMode不会发生混乱
-        unique_lock<mutex> lock(mMutexMode);
-        // mbActivateLocalizationMode为true会关闭局部地图线程
+        unique_lock<mutex> lock(mMutexMode);//viewer线程会在线改变 模式！！！
+        // mbActivateLocalizationMode为true会关闭局部地图线程 
         if(mbActivateLocalizationMode)
         {
             mpLocalMapper->RequestStop();
